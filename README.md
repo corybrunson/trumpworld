@@ -1,6 +1,6 @@
 # the egos of TrumpWorld
 
-This is a Shiny app for exploring the ego networks of persons and organizations included in BuzzFeed's TrumpWorld dataset. The app should be live [here](), and the README for the original BuzzFeed repo is copied below.
+This is a Shiny app for exploring the ego networks of persons and organizations included in BuzzFeed's TrumpWorld dataset. The app should be live [here](https://corybrunson.shinyapps.io/trumpworld/), and the README for the original BuzzFeed repo is copied below.
 
 # TrumpWorld Data
 
