@@ -1,3 +1,7 @@
+# the egos of TrumpWorld
+
+This is a Shiny app for exploring the ego networks of persons and organizations included in BuzzFeed's TrumpWorld dataset. The app should be live [here](), and the README for the original BuzzFeed repo is copied below.
+
 # TrumpWorld Data
 
 This repository contains the data behind TrumpWorld, as described in [this BuzzFeed News article](https://www.buzzfeed.com/johntemplon/help-us-map-trumpworld). In addition to the tabular files already represented in the TrumpWorld spreadsheet, this repository also includes a [GraphML](http://graphml.graphdrawing.org/) file of the data, for ease of importing into network analysis and visualization software.
