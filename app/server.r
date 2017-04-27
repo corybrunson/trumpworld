@@ -6,17 +6,10 @@ for (pkg in pkgs) library(pkg, character.only = TRUE)
 source("app/functions.r")
 
 # read and aggregate data
-datafiles <- c("org-org-connections",
-               "person-org-connections",
-               "person-person-connections")
-ds <- lapply(datafiles, function(f) {
-  d <- read.csv(paste0("data/", f, ".csv"), colClasses = "character")
-  names(d)[1:2] <- c("Entity A", "Entity B")
-  d$Type <- gsub("(.*)\\-[^\\-]+$", "\\1", f)
-  d
-})
-alldat <- dplyr::bind_rows(ds)
-names(alldat)[4] <- "Source(s)"
+alldat <- read.csv("data/trumpworld.csv", colClasses = "character")
+names(alldat) <- c(gsub("\\.", " ", names(alldat)[1:4]),
+                   "Connection", "Source(s)")
+entity_cols <- c(2, 4)
 
 # server
 server <- function(input, output) {
@@ -24,41 +17,17 @@ server <- function(input, output) {
   # select dataset
   twdat <- reactive({
     
-    ## implicit links
-    #if (input$implicit) {
-    #  affdat <- alldat[alldat$Type == "person-org", ]
-    #  impdats <- list()
-    #  if (input$nodes != "Persons") {
-    #    impdats <- c(impdats, list(data.frame(
-    #      implicit_pairs(affdat, "Entity A", "Entity B"),
-    #      Type = "org-org"
-    #    )))
-    #  }
-    #  if (input$nodes != "Organizations") {
-    #    impdats <- c(impdats, list(data.frame(
-    #      implicit_pairs(affdat, "Entity B", "Entity A"),
-    #      Type = "person-person"
-    #    )))
-    #  }
-    #  impdat <- dplyr::bind_rows(impdats)
-    #  names(impdat)[1:3] <- c("Entity A", "Entity B", "Connection")
-    #  # bind explicit and implicit links
-    #  nr <- nrow(alldat)
-    #  alldat <- dplyr::bind_rows(alldat, impdat)
-    #  # remove duplicate links
-    #  dupes <- duplicated_links(alldat, 1, 2)
-    #  alldat <- alldat[!dupes, ]
-    #}
-    
     # desired dataset
     if (input$nodes == "All") {
       dat <- alldat
     } else if (input$nodes == "Organizations") {
-      dat <- alldat %>% dplyr::filter(Type == "org-org")
-      names(dat)[1:2] <- c("Organization A", "Organization B")
+      dat <- alldat %>%
+        dplyr::filter(`Entity A Type` != "Person" &
+                        `Entity B Type` != "Person")
     } else if (input$nodes == "Persons") {
-      dat <- alldat %>% dplyr::filter(Type == "person-person")
-      names(dat)[1:2] <- c("Person A", "Person B")
+      dat <- alldat %>%
+        dplyr::filter(`Entity A Type` == "Person" &
+                        `Entity B Type` == "Person")
     }
     
     dat
@@ -67,7 +36,8 @@ server <- function(input, output) {
   # output node list for ego selection
   output$egos <- renderUI({
     dat <- twdat()
-    entities <- dat[, 1:2] %>% unlist() %>% unname() %>% unique() %>% sort()
+    entities <- dat[, entity_cols] %>%
+      unlist() %>% unname() %>% unique() %>% sort()
     default_ego <- if (input$nodes == "Organizations") {
       "THE TRUMP ORGANIZATION, INC."
     } else {
@@ -84,16 +54,26 @@ server <- function(input, output) {
   # construct graph
   twgraph <- reactive({
     dat <- twdat()
-    g <- igraph::graph_from_edgelist(el = as.matrix(dat[, 1:2]),
+    g <- igraph::graph_from_edgelist(el = as.matrix(dat[, entity_cols]),
                                      directed = TRUE)
     # node types
-    orgs <- unique(c(dat[dat$Type == "person-org", 1],
-                     unlist(dat[dat$Type == "org-org", 1:2])))
-    persons <- unique(c(dat[dat$Type == "person-org", 2],
-                        unlist(dat[dat$Type == "person-person", 1:2])))
-    V(g)$type <- ifelse(match(V(g)$name, c(orgs, persons)) <= length(orgs),
-                        "org",
-                        "person")
+    orgs <- unique(c(
+      dplyr::filter(dat, `Entity A Type` == "Organization")$`Entity A`,
+      dplyr::filter(dat, `Entity B Type` == "Organization")$`Entity B`
+    ))
+    agencies <- unique(c(
+      dplyr::filter(dat, `Entity A Type` == "Federal Agency")$`Entity A`,
+      dplyr::filter(dat, `Entity B Type` == "Federal Agency")$`Entity B`
+    ))
+    persons <- unique(c(
+      dplyr::filter(dat, `Entity A Type` == "Person")$`Entity A`,
+      dplyr::filter(dat, `Entity B Type` == "Person")$`Entity B`
+    ))
+    V(g)$type <- c(
+      rep("org", length(orgs)),
+      rep("agency", length(agencies)),
+      rep("person", length(persons))
+    )[match(V(g)$name, c(orgs, agencies, persons))]
     # return graph
     g
   })
@@ -156,10 +136,11 @@ server <- function(input, output) {
     g <- twego()
     
     # restrict to ego network
-    dat <- dat[dat[, 1] %in% V(g)$name & dat[, 2] %in% V(g)$name, ]
+    dat <- dat[dat[, entity_cols[1]] %in% V(g)$name &
+                 dat[, entity_cols[2]] %in% V(g)$name, ]
     # order by ego network vertex sequence
-    dat <- dat[order(match(as.character(dat[, 1]), V(g)$name),
-                     match(as.character(dat[, 2]), V(g)$name)), ]
+    dat <- dat[order(match(as.character(dat[, entity_cols[1]]), V(g)$name),
+                     match(as.character(dat[, entity_cols[2]]), V(g)$name)), ]
   })
   
   # ego table
@@ -197,7 +178,9 @@ server <- function(input, output) {
     # ego aesthetics
     V(g)$color <- ifelse(V(g)$is_ego, "salmon", "lightgrey")
     V(g)$size <- ifelse(V(g)$is_ego, 2 * input$node.size, input$node.size)
-    V(g)$shape <- c("square", "circle")[match(V(g)$type, c("org", "person"))]
+    V(g)$shape <- c(
+      "square", "rectangle", "circle"
+    )[match(V(g)$type, c("org", "agency", "person"))]
     if (input$label.scheme == "None") {
       V(g)$label <- NA
     } else {
@@ -226,7 +209,7 @@ server <- function(input, output) {
       } else {
         rainbow(n = len)
       }
-
+      
       E(g)$color <- ecols[as.factor(E(g)$connection)]
     }
     
